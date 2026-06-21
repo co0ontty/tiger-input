@@ -1,0 +1,60 @@
+name: Release APK
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-apk:
+    name: Build and Upload APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare APK asset
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          safe_tag="${tag//\//-}"
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk "release/huniu-input-${safe_tag}.apk"
+
+      - name: Create release and upload APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          safe_tag="${TAG_NAME//\//-}"
+          apk="release/huniu-input-${safe_tag}.apk"
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" "${apk}" --clobber
+          else
+            gh release create "${TAG_NAME}" "${apk}" \
+              --title "huniu input ${TAG_NAME}" \
+              --notes "Automated APK build for ${TAG_NAME}."
+          fi
